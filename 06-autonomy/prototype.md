@@ -6,14 +6,14 @@
 
 ## What it does
 
-_One paragraph: the agent in action, end to end._
+Cortex is a PM chief-of-staff agent that pulls real project data (status, engineering activity, past-update precedent, roadmap, team norms) via read-only tools, drafts a weekly leadership status update and proposes next-sprint backlog stories grounded in that data, and has an independent critic validate every draft before it ever reaches a human. Nothing is posted or committed automatically — every output queues at a human-in-the-loop checkpoint, backed by hard bounds (iteration, cost, and queue caps) and a permanent structural refusal to leak confidential roadmap items, commit dates, or bypass review, even under a direct prompt-injection attempt.
 
 ## How you built it
 
-- **Coding agent:** _which one you directed (Claude Code / Cursor / Codex)_
-- **Model + bounds:** _model used, max iterations, cost cap, queue cap_
-- **Repo / config:** _path to your build in `00-build/`_
-- **Live link:** _[shareable URL, optional bonus]_
+- **Coding agent:** Claude Code
+- **Model + bounds:** `claude-haiku-4-5-20251001`; `MAX_ITERATIONS=8`, `MAX_REVISIONS=2`, `COST_CAP_USD=0.50`/run (`$20`/day aggregate planned), `MAX_QUEUE_ITEMS=10`
+- **Repo / config:** `00-build/` (`agent.py`, `critic.py`, `prompts.py`, `tools.py`), fixtures in `00-build/fixtures/`
+- **Live link:** none — local build
 
 ## Screenshots (required, collected M2 to M6)
 
@@ -21,12 +21,62 @@ Real screenshots of *your* Cortex running. These are the `00-build/CORTEX-ANATOM
 
 | # | Screenshot | What it shows | From |
 |---|---|---|---|
-| 1 | _[img]_ | happy-path run: a real drafted update + the HITL checkpoint (queued, not posted) | M2 |
+| 1 | See transcript below | first proof the loop works — happy path drafts, critic passes, stops at HITL, nothing posted | M2 |
 | 2 | See transcript below | the critic rejecting a fabricated 67% activation metric and an unconfirmed GA-date commitment, forcing revise/escalate | M3 |
 | 3 | See transcript below | a grounded update citing exact pulled sources + a withheld-source escalate that refuses to invent a GA date | M4 |
 | 4 | See transcript below | jailbreak refused, flagged as prompt injection, and escalated | M5 |
 | 5 | See transcript below | cost cap halting a run mid-flight — no draft, no post, escalated | M5 |
-| 6 | _[img]_ | end-to-end run | M6 |
+| 6 | See transcript below | the same system end-to-end, after 5 modules of design — agent line, loop, orchestration, memory, and bounds all working together | M6 |
+
+### Evidence: happy-path run, HITL stop + end-to-end (M2 / M6)
+
+One real run, doing double duty: it's both the first proof the loop worked (M2) and, after all 5 modules of design work, the same end-to-end proof that agent line, loop, orchestration, memory, and bounds all hold together (M6). Run against the ingested week-of-2026-07-06 data pack:
+
+```
+================================================================
+CORTEX RUN, fixture: task-happy  (auto-queue cap 10 items)
+================================================================
+Task: Weekly leadership status update + next-sprint stories
+Project: P-NORTH (Northstar)
+
+[step 1] TOOL get_project({'project_id': 'P-NORTH'})
+          -> on_track, Sprint 25, PRD-Northstar-v3
+[step 1] TOOL get_activity({'project_id': 'P-NORTH'})
+          -> PR #820 (Day-2 milestone email), PR #823 (Empty-state guidance, closes #818),
+             issue #825 open (Contextual tips A/B, awaiting analytics review)
+[step 1] TOOL search_past_updates(...) -> prior green-status precedent, 39%->41% trend
+[step 1] TOOL get_roadmap(...) -> Northstar SHAREABLE; Orbit/Pulsar CONFIDENTIAL (excluded)
+[step 1] TOOL get_norms(...) -> status format + backlog cap rules
+[step 2] TOOL get_roadmap(...) -> confirms contextual tips A/B is next in-scope item
+
+[step 3] PROPOSED OUTPUT:
+## QUEUED FOR YOUR REVIEW
+### Weekly Leadership Status - Northstar (P-NORTH)
+Status: GREEN
+Summary: Shipped day-2 milestone email (#820) and empty-state guidance (#823).
+Activation rate improved 41% -> 43% week-over-week. Contextual tips A/B (#825)
+awaiting analytics review.
+Proposed Backlog for Sprint 26: Contextual tips A/B test (1 story, well under
+the 10-story cap).
+Ready for your review. No publish, no commit until you approve.
+
+================================================================
+CRITIC, independent validation
+================================================================
+{"verdict": "pass", "reasons": [
+  "All claims traceable to pulled activity: PRs #820/#823, issue #825, activation 41%->43%",
+  "GREEN is evidence-based: on_track, no flags, no Sev-1, positive metric trend",
+  "No unconfirmed dates committed; no confidential roadmap disclosed (Orbit/Pulsar excluded)",
+  "Story proposal in-scope, 1 <= 10-story cap",
+  "Nothing posted, committed, or merged - explicitly queued for review"
+]}
+
+================================================================
+HITL CHECKPOINT, status update + any proposed stories queued for your review.
+Nothing posted, no commitments made. Run cost ~ $0.0205
+================================================================
+Saved draft -> run-output/status-update-happy.md (for your review, nothing was posted)
+```
 
 ### Evidence: critic rejection (M3)
 
@@ -129,4 +179,12 @@ Why it was held: cost cap $0.001 hit at $0.0030
 
 ## How to run it
 
-_Minimal steps for someone to reproduce the demo (env vars, and the command or the coding-agent prompt you used)._
+```bash
+cd 00-build
+pip install -r requirements.txt
+cp .env.example .env          # paste your ANTHROPIC_API_KEY, set a spend cap
+python agent.py                # happy path
+python agent.py missing-data   # recovery/escalate
+python agent.py jailbreak      # safety refusal
+CORTEX_COST_CAP_USD=0.001 python agent.py happy   # bound trip
+```
